@@ -257,6 +257,158 @@ void PredictData(const string& data_file,
     ClearDataset(&data_set);
 }
 
+YUV toYUV(const RGB &rgb) {
+    int R, G, B;
+    tie(R, G, B) = rgb;
+    return YUV(
+        0.299 * R + 0.587 * G + 0.114 * B,
+        -0.14713 * R - 0.28886 * G + 0.436 * B,
+        0.615 * R - 0.51499 * G - 0.10001 * B
+    );
+}
+
+RGB toRGB(const YUV &yuv) {
+    int Y, U, V;
+    tie(Y, U, V) = yuv;
+    return RGB(
+        Y + 1.13983 * V,
+        Y - 0.39465 * U - 0.58060 * V,
+        Y + 2.03211 * U
+    );
+}
+
+tuple<vector<vector<int>>, int> areas(Image &abs_grad)
+{
+    int len = abs_grad.n_rows * abs_grad.n_cols;
+    auto dsu = DSU(len + 1);
+    auto exist = [&](int i, int j){ return 0 <= i && i < abs_grad.n_rows && 0 <= j && j < abs_grad.n_cols;};
+    auto check = [&](int i, int j){ return exist(i, j) && (get<0>(abs_grad(i, j)));};
+    vector<vector<int>> groups(abs_grad.n_rows, vector<int>(abs_grad.n_cols));
+    int count = 1;
+    for (int i = 0; i < abs_grad.n_rows; ++i)
+        for (int j = 0; j < abs_grad.n_cols; ++j) {
+            bool A = check(i, j);
+            bool C = check(i - 1, j);
+            bool B = check(i, j - 1);
+            if (!A)
+                continue;
+            int current = 0;
+            if (!B && !C) {
+                current = count++;
+                dsu.make_set(current);
+            }
+
+            if (B && !C)
+                current = dsu.find_set(groups[i][j - 1]);
+            if (!B && C)
+                current = dsu.find_set(groups[i - 1][j]);
+            if (B && C)
+                current = dsu.union_sets(groups[i - 1][j], groups[i][j - 1]);
+
+            groups[i][j] = current;
+        }
+    return make_tuple(groups, count);
+}
+
+
+void do_detect(const Image &im, const char *output_name) {
+    // Image gray = gray_world(im);
+    Image conv(im.n_rows, im.n_cols);
+    for (int i = 0; i < im.n_rows; ++i)
+        for (int j = 0; j < im.n_cols; ++j)
+            conv(i, j) = toYUV(im(i, j));
+
+    auto check_red = [](YUV &in)->bool{
+        int Y, U, V;
+        tie(Y, U, V) = in;
+        return U - V < -30 && U + V > 20;
+    };
+
+    auto check_blue = [](YUV &in)->bool{
+        int Y, U, V;
+        tie(Y, U, V) = in;
+        return Y < 128 && U - V > 30 && 2 * U + V > 30;
+    };
+
+    for (int i = 0; i < conv.n_rows; ++i)
+        for (int j = 0; j < conv.n_cols; ++j)
+            if (!(check_red(conv(i, j)) || check_blue(conv(i, j))))
+                conv(i, j) = YUV(0, 0, 0);
+
+    vector<vector<int>> groups;
+    int cnt;
+    tie(groups, cnt) = areas(conv);
+
+    Image out(conv.n_rows, conv.n_cols);
+    for (int i = 0; i < conv.n_rows; ++i)
+        for (int j = 0; j < conv.n_cols; ++j)
+            out(i, j) = toRGB(conv(i, j));
+
+    vector<pair<int, int>> min_corners(cnt, pair<int, int>(1e9, 1e9));
+    vector<pair<int, int>> max_corners(cnt, pair<int, int>(-1, -1));
+
+    for (int i = 0; i < conv.n_rows; ++i)
+        for (int j = 0; j < conv.n_cols; ++j)
+            if (groups[i][j]) {
+                auto &minc = min_corners[groups[i][j]];
+                minc.first = min(minc.first, i);
+                minc.second = min(minc.second, j);
+
+                auto &maxc = max_corners[groups[i][j]];
+                maxc.first = max(maxc.first, i);
+                maxc.second = max(maxc.second, j);
+            }
+    
+    auto check = [](int left, int right)->bool{
+        int l = right - left;
+        return l > 10 && l < 100;
+    };
+    auto check2 = [](int x, int y)->bool{
+        int s = x * y;
+        return 1 || s > 10 && s < 3000;
+    };
+
+    for (int t = 0; t < cnt; ++t) {
+        auto &minc = min_corners[t];
+        auto &maxc = max_corners[t];
+
+        if (minc.first > maxc.first)
+            continue;
+        if (!(check(minc.first, maxc.first) &&
+              check(minc.second, maxc.second) &&
+              check2(maxc.first - minc.first, maxc.second - minc.second)))
+            continue;
+
+        for (int i = minc.first; i <= maxc.first; ++i)
+            for (int j = minc.second; j <= maxc.second; ++j)
+                out(i, minc.second) = 
+                out(i, maxc.second) = 
+                out(minc.first, j) = 
+                out(maxc.first, j) = RGB(0, 255, 0);
+    }
+
+    save_image(out, output_name);
+    cerr << output_name << endl;
+}
+
+void DetectImages(const string& data_file) {
+    TFileList file_list;
+    TDataSet data_set;
+
+    LoadFileList(data_file, &file_list);
+
+    LoadImages(file_list, &data_set);
+
+    for (int i = 0; i < file_list.size(); ++i) {
+        string name = file_list[i].first;
+        name = name.substr(0, name.size() - 4) + ".res.bmp";
+
+        do_detect(*data_set[i].first, name.c_str());
+    }
+
+    ClearDataset(&data_set);
+}
+
 int main(int argc, char** argv) {
         // Command line options parser
     ArgvParser cmd;
@@ -273,6 +425,7 @@ int main(int argc, char** argv) {
         ArgvParser::OptionRequiresValue);
     cmd.defineOption("train", "Train classifier");
     cmd.defineOption("predict", "Predict dataset");
+    cmd.defineOption("detect", "Detect dataset");
         
         // Add options aliases
     cmd.defineOptionAlternative("data_set", "d");
@@ -295,7 +448,7 @@ int main(int argc, char** argv) {
     string model_file = cmd.optionValue("model");
     bool train = cmd.foundOption("train");
     bool predict = cmd.foundOption("predict");
-
+    bool detect = cmd.foundOption("detect");
         // If we need to train classifier
     if (train)
         TrainClassifier(data_file, model_file);
@@ -310,5 +463,9 @@ int main(int argc, char** argv) {
         string prediction_file = cmd.optionValue("predicted_labels");
             // Predict data
         PredictData(data_file, model_file, prediction_file);
+    }
+    
+    if (detect) {
+        DetectImages(data_file);
     }
 }

@@ -229,58 +229,6 @@ void hysteresis_bfs(InputType &abs_grad)
 				abs_grad(i, j) = 0;
 }
 
-class DSU
-{
-public:
-	DSU(int n)
-		: parent(n), rank(n), marks(n)
-	{}
-
-	void make_set(int v)
-	{
-		parent[v] = v;
-		rank[v] = 0;
-		marks[v] = 0;
-	}
-	
-	void set_mark(int v)
-	{
-		marks[find_set(v)] = 1;
-	}
-
-	bool check_mark(int v)
-	{
-		return marks[find_set(v)];
-	}
-
-	int find_set(int v)
-	{
-		if (parent[v] == v)
-			return v;
-		return parent[v] = find_set(parent[v]);
-	}
-	 
-	int union_sets(int a, int b)
-	{
-		a = find_set(a);
-		b = find_set(b);
-		if (a != b) {
-			if (rank[a] < rank[b])
-				swap(a, b);
-			parent[b] = a;
-			marks[a] = (marks[a] | marks[b]);
-			if (rank[a] == rank[b])
-				++rank[a];
-		}
-		return a;
-	}
-
-private:
-	vector<int> parent;
-	vector<int> rank;
-	vector<char> marks;
-};
-
 template <typename InputType>
 void hysteresis_dsu(InputType &abs_grad)
 {
