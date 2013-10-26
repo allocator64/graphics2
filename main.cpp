@@ -271,20 +271,21 @@ RGB toRGB(const YUV &yuv) {
     int Y, U, V;
     tie(Y, U, V) = yuv;
     return RGB(
-        Y + 1.13983 * V,
-        Y - 0.39465 * U - 0.58060 * V,
-        Y + 2.03211 * U
+        1 * Y + 0 * U + 1.13983 * V,
+        1 * Y - 0.39465 * U - 0.58060 * V,
+        1 * Y + 2.03211 * U + 0 * V
     );
 }
 
 tuple<vector<vector<int>>, int> areas(Image &abs_grad)
 {
     int len = abs_grad.n_rows * abs_grad.n_cols;
-    auto dsu = DSU(len + 1);
+    DSU dsu(len + 1);
     auto exist = [&](int i, int j){ return 0 <= i && i < abs_grad.n_rows && 0 <= j && j < abs_grad.n_cols;};
     auto check = [&](int i, int j){ return exist(i, j) && (get<0>(abs_grad(i, j)));};
     vector<vector<int>> groups(abs_grad.n_rows, vector<int>(abs_grad.n_cols));
     int count = 1;
+    dsu.make_set(0);
     for (int i = 0; i < abs_grad.n_rows; ++i)
         for (int j = 0; j < abs_grad.n_cols; ++j) {
             bool A = check(i, j);
@@ -307,42 +308,37 @@ tuple<vector<vector<int>>, int> areas(Image &abs_grad)
 
             groups[i][j] = current;
         }
+    for (auto &i : groups)
+        for (auto &j : i)
+            j = dsu.find_set(j);
     return make_tuple(groups, count);
 }
 
 
-void do_detect(const Image &im, const char *output_name) {
-    // Image gray = gray_world(im);
+void do_detect(Image &im, const char *output_name) {
+    // Image contrast = autocontrast(im, 0.1);
     Image conv(im.n_rows, im.n_cols);
     for (int i = 0; i < im.n_rows; ++i)
         for (int j = 0; j < im.n_cols; ++j)
             conv(i, j) = toYUV(im(i, j));
 
-    auto check_red = [](YUV &in)->bool{
+    auto check_color = [](YUV &in)->bool{
         int Y, U, V;
         tie(Y, U, V) = in;
-        return U - V < -30 && U + V > 20;
-    };
-
-    auto check_blue = [](YUV &in)->bool{
-        int Y, U, V;
-        tie(Y, U, V) = in;
-        return Y < 128 && U - V > 30 && 2 * U + V > 30;
+        return Y > 2 && Y < 200 && (
+            U - V < 0 && U + V > 10 ||
+            Y < 128 && U - V > 30 && 2 * U + V > 30
+        );
     };
 
     for (int i = 0; i < conv.n_rows; ++i)
         for (int j = 0; j < conv.n_cols; ++j)
-            if (!(check_red(conv(i, j)) || check_blue(conv(i, j))))
+            if (!(check_color(conv(i, j))))
                 conv(i, j) = YUV(0, 0, 0);
 
     vector<vector<int>> groups;
     int cnt;
     tie(groups, cnt) = areas(conv);
-
-    Image out(conv.n_rows, conv.n_cols);
-    for (int i = 0; i < conv.n_rows; ++i)
-        for (int j = 0; j < conv.n_cols; ++j)
-            out(i, j) = toRGB(conv(i, j));
 
     vector<pair<int, int>> min_corners(cnt, pair<int, int>(1e9, 1e9));
     vector<pair<int, int>> max_corners(cnt, pair<int, int>(-1, -1));
@@ -361,33 +357,87 @@ void do_detect(const Image &im, const char *output_name) {
     
     auto check = [](int left, int right)->bool{
         int l = right - left;
-        return l > 10 && l < 100;
+        return l > 10 && l < 1000;
     };
     auto check2 = [](int x, int y)->bool{
         int s = x * y;
-        return 1 || s > 10 && s < 3000;
+        return s > 100 && s < 10000;
     };
 
-    for (int t = 0; t < cnt; ++t) {
+    cnt = 0;
+
+    for (int t = 1; t < int(min_corners.size()); ++t) {
         auto &minc = min_corners[t];
         auto &maxc = max_corners[t];
 
-        if (minc.first > maxc.first)
-            continue;
-        if (!(check(minc.first, maxc.first) &&
+        if (minc.first > maxc.first || minc.second > maxc.second || !(check(minc.first, maxc.first) &&
               check(minc.second, maxc.second) &&
               check2(maxc.first - minc.first, maxc.second - minc.second)))
             continue;
+        min_corners[cnt] = min_corners[t];
+        max_corners[cnt] = max_corners[t];
+        cnt++;
+    }
+    min_corners.resize(cnt);
+    max_corners.resize(cnt);
+    DSU dsu(cnt);
+    for (int i = 0; i < cnt; ++i)
+        dsu.make_set(i);
 
-        for (int i = minc.first; i <= maxc.first; ++i)
-            for (int j = minc.second; j <= maxc.second; ++j)
-                out(i, minc.second) = 
-                out(i, maxc.second) = 
-                out(minc.first, j) = 
-                out(maxc.first, j) = RGB(0, 255, 0);
+    auto cross = [](pair<int, int> A, pair<int, int> B, pair<int, int> C, pair<int, int> D)->bool{
+        if (A > C) {
+            swap(A, C);
+            swap(B, D);
+        }
+        return A.first <= C.first && C.first <= B.first && (
+               A.second <= C.second && C.second <= B.second ||
+               A.second <= D.second && D.second <= B.second
+               ) || C.first <= B.first && B.first <= D.first &&
+                    C.second <= B.second && B.second <= D.second;
+    };
+
+    {
+        auto &minc = min_corners;
+        auto &maxc = max_corners;
+        for (bool found = 1; found;) {
+            found = 0;
+            for (int i = 0; i < cnt; ++i)
+                for (int j = i + 1; j < cnt; ++j) {
+                    int t1 = dsu.find_set(i);
+                    int t2 = dsu.find_set(j);
+                    if (t1 == t2)
+                        continue;
+                    if (cross(minc[t1], maxc[t1], minc[t2], maxc[t2])) {
+                        int k = dsu.union_sets(t1, t2);
+                        minc[k].first = min(minc[t1].first, minc[t2].first);
+                        minc[k].second = min(minc[t1].second, minc[t2].second);
+                        maxc[k].first = max(maxc[t1].first, maxc[t2].first);
+                        maxc[k].second = max(maxc[t1].second, maxc[t2].second);
+                        found = 1;
+                    }
+                }
+        }
     }
 
-    save_image(out, output_name);
+    Image out(conv.n_rows, conv.n_cols);
+    for (int i = 0; i < conv.n_rows; ++i)
+        for (int j = 0; j < conv.n_cols; ++j)
+            out(i, j) = toRGB(conv(i, j));
+
+    for (int t = 0; t < cnt; ++t)
+        if (dsu.find_set(t) == t){
+            auto &minc = min_corners[t];
+            auto &maxc = max_corners[t];
+            // cerr << minc.first << " " << minc.second << " " << maxc.first << " " << maxc.second << endl;
+            for (int i = minc.first; i <= maxc.first; ++i)
+                for (int j = minc.second; j <= maxc.second; ++j)
+                    im(i, minc.second) = \
+                    im(i, maxc.second) = \
+                    im(minc.first, j) = \
+                    im(maxc.first, j) = RGB(0, 255, 0);
+        }
+    normalize(im);
+    save_image(im, output_name);
     cerr << output_name << endl;
 }
 

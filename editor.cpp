@@ -544,7 +544,6 @@ Image autocontrast(const Image &im, double fraction)
 	auto contrast = ContrastFunctor(im.n_rows * im.n_cols, fraction);
 	auto result = im.unary_map(contrast);
 	auto limits = contrast.get_limits();
-	cerr << limits.first << " " << limits.second << endl;
 	if (cmp(limits.first, limits.second) == 0)
 		return im;
 	auto strech_hyst = StretchHyst(limits.first, limits.second);
