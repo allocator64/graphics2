@@ -9,6 +9,8 @@
 #include "EasyBMP/EasyBMP.h"
 #include "liblinear-1.93/linear.h"
 #include "argvparser/argvparser.h"
+#include "matrix.h"
+#include "editor.h"
 
 using std::string;
 using std::vector;
@@ -16,13 +18,15 @@ using std::ifstream;
 using std::ofstream;
 using std::pair;
 using std::make_pair;
+using std::make_tuple;
 using std::cout;
 using std::cerr;
 using std::endl;
+using std::get;
 
 using CommandLineProcessing::ArgvParser;
 
-typedef vector<pair<BMP*, int> > TDataSet;
+typedef vector<pair<Image*, int> > TDataSet;
 typedef vector<pair<string, int> > TFileList;
 typedef vector<pair<vector<float>, int> > TFeatures;
 
@@ -53,11 +57,26 @@ void LoadFileList(const string& data_file, TFileList* file_list) {
 void LoadImages(const TFileList& file_list, TDataSet* data_set) {
     for (size_t img_idx = 0; img_idx < file_list.size(); ++img_idx) {
             // Create image
-        BMP* image = new BMP();
-            // Read image from file
-        image->ReadFromFile(file_list[img_idx].first.c_str());
-            // Add image and it's label to dataset
-        data_set->push_back(make_pair(image, file_list[img_idx].second));
+
+        BMP in;
+        auto path = file_list[img_idx].first;
+
+        if (!in.ReadFromFile(path.c_str())) {
+            cerr << "Cannot load " << path;
+            exit(1);
+        }
+
+        Image *res = new Image(in.TellHeight(), in.TellWidth());
+
+        for (int i = 0; i < res->n_rows; ++i) {
+            for (int j = 0; j < res->n_cols; ++j) {
+                RGBApixel *p = in(j, i);
+                (*res)(i, j) = make_tuple(p->Red, p->Green, p->Blue);
+            }
+        }
+
+        // Add image and it's label to dataset
+        data_set->push_back(make_pair(res, file_list[img_idx].second));
     }
 }
 
@@ -81,6 +100,35 @@ void SavePredictions(const TFileList& file_list,
 void ExtractFeatures(const TDataSet& data_set, TFeatures* features) {
     for (size_t image_idx = 0; image_idx < data_set.size(); ++image_idx) {
         
+        Image *im = data_set[image_idx].first;
+
+        Matrix<int> res(im->n_rows, im->n_cols);
+        
+        for (int i = 0; i < im->n_rows; ++i)
+            for (int j = 0; j < im->n_cols; ++i)
+                res(i, j) = (
+                    get<0>((*im)(i, j)) * 0.299 +
+                    get<1>((*im)(i, j)) * 0.587 +
+                    get<2>((*im)(i, j)) * 0.114
+                );
+
+        Matrix<int> tmp(res.n_rows, res.n_cols);
+
+        // Matrix<Monochrome> x_sobel = {
+        //     {-1, 0, 1},
+        //     {-2, 0, 2},
+        //     {-1, 0, 1},
+        // };
+        
+        // for (int i = 0; i < )
+        // res = custom(res, x_sobel);
+        // Matrix<Monochrome> y_sobel = {
+        //     {1, 2, 1},
+        //     {0, 0, 0},
+        //     {-1, -2, -1},
+        // };
+        // res = custom(res, y_sobel);
+
         // PLACE YOUR CODE HERE
         // Remove this sample code and place your feature extraction code here
         vector<float> one_image_features;
