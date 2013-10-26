@@ -57,10 +57,40 @@ RGB ConvolutionFunctor<KernelType>\
 	);
 }
 
+template<typename ValueType>
+ConvolutionFunctor2<ValueType>\
+	::ConvolutionFunctor2(const Matrix<ValueType> &k_)
+	:kernel(k_),
+	 diameter(max(k_.n_rows, k_.n_cols)),
+	 row_shift((diameter - k_.n_rows) / 2),
+	 col_shift((diameter - k_.n_cols) / 2),
+	 radius(diameter / 2)
+{}
+
+template<typename ValueType>
+ValueType ConvolutionFunctor2<ValueType>\
+	::operator()(const Matrix<ValueType> &f)
+{
+	ValueType sum;
+	for (int i = 0; i < kernel.n_rows; ++i)
+		for (int j = 0; j < kernel.n_cols; ++j) {
+			auto tmp = kernel(i, j) * f(i + row_shift, j + col_shift);
+			sum = sum + tmp;
+		}
+	return sum;
+}
+
 template <typename KernelType>
 static Image custom(const Image &im, const KernelType &kernel)
 {
 	auto conv = ConvolutionFunctor<KernelType>(kernel);
+	return im.unary_map(conv);
+}
+
+template <typename ValueType>
+static Matrix<ValueType> custom2(const Matrix<ValueType> &im, const Matrix<ValueType> &kernel)
+{
+	auto conv = ConvolutionFunctor2<ValueType>(kernel);
 	return im.unary_map(conv);
 }
 
@@ -82,4 +112,16 @@ std::vector<Matrix<ValueType>> split_image(const Matrix<ValueType> &im)
 		im.submatrix(rows, 0, rows, cols),
 		im.submatrix(2 * rows, 0, rows, cols),
 	});
+}
+
+template<typename ValueType>
+Image MonochromeToImage(const Matrix<ValueType> &im)
+{
+	Image result(im.n_rows, im.n_cols);
+	for (int i = 0; i < im.n_rows; ++i)
+		for (int j = 0; j < im.n_cols; ++j) {
+			int p = round(im(i, j));
+			result(i, j) = RGB(p, p, p);
+		}
+	return result;
 }

@@ -26,19 +26,6 @@ Matrix<Monochrome> ImageToMonochrome(const Image &im)
 	return result;
 }
 
-Image MonochromeToImage(const Matrix<Monochrome> &im)
-{
-	Image result(im.n_rows, im.n_cols);
-	for (int i = 0; i < im.n_rows; ++i)
-		for (int j = 0; j < im.n_cols; ++j)
-			result(i, j) = RGB(
-				im(i, j),
-				im(i, j),
-				im(i, j)
-			);
-	return result;
-}
-
 Image gaussian(const Image &im, double sigma, int radius)
 {
 	int n = radius * 2 + 1;
@@ -659,4 +646,24 @@ Image resize(const Image &im, double scale)
         }
     }
 	return out;
+}
+
+void save_image(const Image &im, const char *path)
+{
+    BMP out;
+    out.SetSize(im.n_cols, im.n_rows);
+
+    int r, g, b;
+    RGBApixel p;
+    p.Alpha = 255;
+    for (int i = 0; i < im.n_rows; ++i) {
+        for (int j = 0; j < im.n_cols; ++j) {
+            tie(r, g, b) = im(i, j);
+            p.Red = r; p.Green = g; p.Blue = b;
+            out.SetPixel(j, i, p);
+        }
+    }
+
+    if (!out.WriteToFile(path))
+        throw string("Error writing file ") + string(path);
 }

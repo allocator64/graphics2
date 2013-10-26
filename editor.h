@@ -2,7 +2,7 @@
 
 #include <tuple>
 #include "matrix.h"
-
+#include "EasyBMP/EasyBMP.h"
 using namespace std;
 
 typedef tuple<int, int, int> RGB;
@@ -23,10 +23,16 @@ Image autocontrast(const Image &im, double fraction);
 Image resize(const Image &im, double scale);
 
 Matrix<Monochrome> ImageToMonochrome(const Image &im);
-Image MonochromeToImage(const Matrix<Monochrome> &im);
+
+template<typename ValueType>
+Image MonochromeToImage(const Matrix<ValueType> &im);
+void save_image(const Image &im, const char *path);
 
 template <typename KernelType>
 static Image custom(const Image &im, const KernelType &kernel);
+
+template <typename ValueType>
+static Matrix<ValueType> custom2(const Matrix<ValueType> &im, const Matrix<ValueType> &kernel);
 
 template<typename KernelType>
 class ConvolutionFunctor
@@ -45,6 +51,23 @@ public:
 	const int radius;
 };
 
+template<typename ValueType>
+class ConvolutionFunctor2
+{
+public:
+	ConvolutionFunctor2(const Matrix<ValueType> &k_);
+
+	ValueType operator()(const Matrix<ValueType> &f);
+
+private:
+	const Matrix<ValueType> &kernel;
+	const int diameter;
+	const int row_shift;
+	const int col_shift;
+public:
+	const int radius;
+};
+
 class NormalizeFunctor
 {
 	int norm(int pix)
@@ -56,9 +79,11 @@ public:
 		: threshold1(t1),
 		  threshold2(t2)
 	{}
-	Monochrome operator()(const MonochromeImage &im)
+
+	template<typename ValueType>
+	ValueType operator()(const Matrix<ValueType> &im)
 	{
-		return norm(im(0, 0));
+		return norm(round(im(0, 0)));
 	}
 
 	RGB operator()(const Image &pix)

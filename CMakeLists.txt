@@ -26,7 +26,7 @@ SET(CMAKE_DEBUG_POSTFIX "_d")
 MESSAGE(STATUS "CMAKE_DEBUG_POSTFIX   : ${CMAKE_DEBUG_POSTFIX}")
 
 IF(UNIX)
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -Wno-unused-result")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O2 -Wno-unused-result")
 ENDIF(UNIX)
 
 ##########################################################################################

@@ -105,35 +105,74 @@ void ExtractFeatures(const TDataSet& data_set, TFeatures* features) {
         Matrix<int> res(im->n_rows, im->n_cols);
         
         for (int i = 0; i < im->n_rows; ++i)
-            for (int j = 0; j < im->n_cols; ++i)
+            for (int j = 0; j < im->n_cols; ++j)
                 res(i, j) = (
                     get<0>((*im)(i, j)) * 0.299 +
                     get<1>((*im)(i, j)) * 0.587 +
                     get<2>((*im)(i, j)) * 0.114
                 );
 
-        Matrix<int> tmp(res.n_rows, res.n_cols);
+        // auto p = MonochromeToImage(res);
+        Matrix<int> x_sobel = {
+            {-1, 0, 1},
+            {-2, 0, 2},
+            {-1, 0, 1},
+        };
+        auto dx = custom2(res, x_sobel);
 
-        // Matrix<Monochrome> x_sobel = {
-        //     {-1, 0, 1},
-        //     {-2, 0, 2},
-        //     {-1, 0, 1},
-        // };
+        Matrix<int> y_sobel = {
+            {-1, -2, -1},
+            {0, 0, 0},
+            {1, 2, 1},
+        };
+        auto dy = custom2(res, y_sobel);
+
+        Matrix<double> grad(res.n_rows, res.n_cols);
+        for (int i = 0; i < grad.n_rows; ++i)
+            for (int j = 0; j < grad.n_cols; ++j) {
+                grad(i, j) = sqrt(dx(i, j) * dx(i, j) + dy(i, j) * dy(i, j));
+            }
+
+        Matrix<float> angle(res.n_rows, res.n_cols);
+        for (int i = 0; i < angle.n_rows; ++i)
+            for (int j = 0; j < angle.n_cols; ++j) {
+                angle(i, j) = atan2(dy(i, j), dx(i, j));
+            }
         
-        // for (int i = 0; i < )
-        // res = custom(res, x_sobel);
-        // Matrix<Monochrome> y_sobel = {
-        //     {1, 2, 1},
-        //     {0, 0, 0},
-        //     {-1, -2, -1},
-        // };
-        // res = custom(res, y_sobel);
+        vector<float> one_image_features;
+        int shift = 4;
+        int sectors = 10;
+        for (int i = 0; i < grad.n_rows; i += shift)
+            for (int j = 0; j < grad.n_cols; j += shift) {
+                vector<float> local(sectors);
+                for (int ii = i; ii < min(i + shift, grad.n_rows); ++ii)
+                    for (int jj = j; jj < min(j + shift, grad.n_cols); ++jj) {
+                        auto alpha = angle(ii, jj);
+                        local[int((alpha + M_PI / 2) / (2 * M_PI) * sectors)] += grad(ii, jj);
+                    }
+                float sum = 1e-9;
+                for (auto &k : local) {
+                    sum += k * k;
+                }
+                sum = sqrt(sum);
+                for (auto &k : local)
+                    k /= sum;
+                copy(local.begin(), local.end(), back_inserter(one_image_features));
+            }
+
+        // save_image(*im, "im.bmp");
+        // save_image(MonochromeToImage(res), "res.bmp");
+        // save_image(MonochromeToImage(normalize(dy)), "dy.bmp");
+        // save_image(MonochromeToImage(normalize(dx)), "dx.bmp");
+        // save_image(MonochromeToImage(normalize(grad)), "grad.bmp");
 
         // PLACE YOUR CODE HERE
         // Remove this sample code and place your feature extraction code here
-        vector<float> one_image_features;
-        one_image_features.push_back(1.0);
-        features->push_back(make_pair(one_image_features, 1));
+        // one_image_features.push_back(1.0);
+        features->push_back(make_pair(one_image_features, data_set[image_idx].second));
+        // for (auto &i : one_image_features)
+        //     cerr << i << " ";
+
         // End of sample code
 
     }
