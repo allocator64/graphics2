@@ -140,15 +140,18 @@ void ExtractFeatures(const TDataSet& data_set, TFeatures* features) {
             }
         
         vector<float> one_image_features;
-        int shift = 4;
-        int sectors = 10;
+        int shift = 3;
+        int window = 6;
+        int sectors = 16;
         for (int i = 0; i < grad.n_rows; i += shift)
             for (int j = 0; j < grad.n_cols; j += shift) {
                 vector<float> local(sectors);
-                for (int ii = i; ii < min(i + shift, grad.n_rows); ++ii)
-                    for (int jj = j; jj < min(j + shift, grad.n_cols); ++jj) {
+                for (int ii = i; ii < min(i + window, grad.n_rows); ++ii)
+                    for (int jj = j; jj < min(j + window, grad.n_cols); ++jj) {
                         auto alpha = angle(ii, jj);
-                        local[int((alpha + M_PI / 2) / (2 * M_PI) * sectors)] += grad(ii, jj);
+                        int idx = round((alpha + M_PI / 2) / (2 * M_PI) * sectors);
+                        idx = max(0, min(sectors, idx));
+                        local[idx] += grad(ii, jj);
                     }
                 float sum = 1e-9;
                 for (auto &k : local) {
