@@ -95,6 +95,42 @@ void SavePredictions(const TFileList& file_list,
     stream.close();
 }
 
+template<typename ValueType>
+Matrix<ValueType> make_large(const Matrix<ValueType> &im)
+{
+    Matrix<ValueType> res(im.n_rows + 2, im.n_cols + 2);
+    for (int i = 0; i < im.n_rows; ++i)
+        for (int j = 0; j < im.n_cols; ++j)
+            res(i + 1, j + 1) = im(i, j);
+    
+    for (int i = 1; i < res.n_rows - 1; ++i) {
+        res(i, 0) = res(i, 1);
+        res(i, res.n_cols - 1) = res(i, res.n_cols - 2);
+    }
+    for (int j = 1; j < res.n_cols - 1; ++j) {
+        res(0, j) = res(1, j);
+        res(res.n_rows - 1, j) = res(res.n_rows - 2, j);
+    }
+    int n = res.n_rows;
+    int m = res.n_cols;
+    res(0, 0) = res(1, 1);
+    res(0, m - 1) = res(1, m - 2);
+    res(n - 1, 0) = res(n - 2, 1);
+    res(n - 1, m - 1) = res(n - 2, m - 2);
+    return res;
+}
+
+template<typename ValueType>
+Matrix<ValueType> make_small(const Matrix<ValueType> &im)
+{
+    Matrix<ValueType> res(im.n_rows - 2, im.n_cols - 2);
+    for (int i = 0; i < res.n_rows; ++i)
+        for (int j = 0; j < res.n_cols; ++j)
+            res(i, j) = im(i + 1, j + 1);
+    return res;
+}
+
+
 // Exatract features from dataset.
 // You should implement this function by yourself =)
 void ExtractFeatures(const TDataSet& data_set, TFeatures* features) {
@@ -112,22 +148,23 @@ void ExtractFeatures(const TDataSet& data_set, TFeatures* features) {
                     get<2>((*im)(i, j)) * 0.114
                 );
 
-        // auto p = MonochromeToImage(res);
         Matrix<int> x_sobel = {
             {-1, 0, 1},
             {-2, 0, 2},
             {-1, 0, 1},
         };
-        auto dx = custom2(res, x_sobel);
+
+        auto dx = make_small(custom2(make_large(res), x_sobel));
 
         Matrix<int> y_sobel = {
             {-1, -2, -1},
             {0, 0, 0},
             {1, 2, 1},
         };
-        auto dy = custom2(res, y_sobel);
 
-        Matrix<double> grad(res.n_rows, res.n_cols);
+        auto dy = make_small(custom2(make_large(res), y_sobel));
+
+        Matrix<float> grad(res.n_rows, res.n_cols);
         for (int i = 0; i < grad.n_rows; ++i)
             for (int j = 0; j < grad.n_cols; ++j) {
                 grad(i, j) = sqrt(dx(i, j) * dx(i, j) + dy(i, j) * dy(i, j));
@@ -149,8 +186,8 @@ void ExtractFeatures(const TDataSet& data_set, TFeatures* features) {
                 for (int ii = i; ii < min(i + window, grad.n_rows); ++ii)
                     for (int jj = j; jj < min(j + window, grad.n_cols); ++jj) {
                         auto alpha = angle(ii, jj);
-                        int idx = round((alpha + M_PI / 2) / (2 * M_PI) * sectors);
-                        idx = max(0, min(sectors, idx));
+                        int idx = round((alpha + M_PI) / (2 * M_PI) * sectors);
+                        idx = max(0, min(sectors - 1, idx));
                         local[idx] += grad(ii, jj);
                     }
                 float sum = 1e-9;
